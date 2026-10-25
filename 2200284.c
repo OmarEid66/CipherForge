@@ -1,6 +1,8 @@
 // 1. Standard C headers and constants
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 static const unsigned char PC1[56] = {
     57, 49, 41, 33, 25, 17,  9,
@@ -255,7 +257,6 @@ uint64_t xor_with_subkey(uint64_t expanded_right, uint64_t subkey){
     return expanded_right ^ subkey;
 }
 
-// 4.3 S-box substitution
 // 4.3 S-box substitution: 48 bits -> 32 bits
 uint32_t s_box_substitution(uint64_t input)
 {
@@ -334,8 +335,306 @@ uint64_t des_process_block(uint64_t block, uint64_t subkeys[16], int decrypt){
 }
 
 // 6. File processing
-//7. main(argc, argv)
-int main(void)
+// 6.1 Validate that the input file size is divisible by 8
+// Returns: 1 = valid, 0 = invalid size, -1 = error
+static int validate_input_size(
+    FILE *input,
+    unsigned long long *file_size
+)
+{
+    // Move to the end of the file.
+    if (_fseeki64(input, 0, SEEK_END) != 0)
+    {
+        fprintf(stderr, "Error: Unable to seek through input file.\n");
+        return -1;
+    }
+
+    // Get the file size using a 64-bit file offset.
+    long long size = _ftelli64(input);
+
+    if (size < 0)
+    {
+        fprintf(stderr, "Error: Unable to determine input file size.\n");
+        return -1;
+    }
+
+    *file_size = (unsigned long long)size;
+
+    // Return to the beginning before processing.
+    if (_fseeki64(input, 0, SEEK_SET) != 0)
+    {
+        fprintf(stderr, "Error: Unable to rewind input file.\n");
+        return -1;
+    }
+
+    // DES requires complete 8-byte blocks.
+    if ((*file_size % 8ULL) != 0)
+    {
+        fprintf(
+            stderr,
+            "Error: Input file size (%llu bytes) "
+            "is not divisible by 8.\n",
+            *file_size
+        );
+
+        return 0;
+    }
+
+    return 1;
+}
+
+// Returns 1 if paths refer to the same normalized path, 0 otherwise.
+static int same_file_path(const char *input_path,
+                          const char *output_path)
+{
+    char input_full[4096];
+    char output_full[4096];
+
+    if (_fullpath(input_full, input_path, sizeof(input_full)) == NULL ||
+        _fullpath(output_full, output_path, sizeof(output_full)) == NULL)
+    {
+        fprintf(stderr, "Error: Unable to resolve file paths.\n");
+        return -1;
+    }
+
+    return _stricmp(input_full, output_full) == 0;
+}
+
+// 6.2 Process a file using DES in buffered ECB mode
+// decrypt = 0: Encrypt
+// decrypt = 1: Decrypt
+// Returns 1 on success, 0 on failure.
+// Safety policy: do not overwrite an existing output file.
+static int process_file(
+    const char *input_path,
+    const char *output_path,
+    uint64_t key,
+    int decrypt
+)
+{
+    FILE *input = NULL;
+    FILE *output = NULL;
+    FILE *probe = NULL;
+
+    unsigned char buffer[65536]; // 64 KiB buffer
+    unsigned long long file_size = 0;
+    unsigned long long total_processed = 0;
+    uint64_t subkeys[16];
+
+    char temp_path[8192];
+    int success = 0;
+    int temp_created = 0;
+
+    int same = same_file_path(input_path, output_path);
+    if (same != 0)
+    {
+        if (same == 1)
+            fprintf(stderr, "Error: Input and output paths must be different.\n");
+        return 0;
+    }
+
+    // Step 1: Open and validate the input before creating any output.
+    input = fopen(input_path, "rb");
+    if (input == NULL)
+    {
+        fprintf(stderr, "Error: Cannot open input file.\n");
+        goto cleanup;
+    }
+
+    int validation = validate_input_size(input, &file_size);
+    if (validation != 1)
+        goto cleanup;
+
+    // Step 2: Build a temporary path beside the requested output.
+    // Keeping it in the same directory allows rename() to publish it there.
+    int path_len = snprintf(temp_path, sizeof(temp_path), "%s.tmp", output_path);
+    if (path_len < 0 || (size_t)path_len >= sizeof(temp_path))
+    {
+        fprintf(stderr, "Error: Output path is too long.\n");
+        goto cleanup;
+    }
+
+    // Step 3: Never overwrite an existing final output.
+    probe = fopen(output_path, "rb");
+    if (probe != NULL)
+    {
+        fclose(probe);
+        probe = NULL;
+        fprintf(stderr,
+                "Error: Output file already exists; choose a different output path.\n");
+        goto cleanup;
+    }
+
+    // Refuse to reuse or truncate a pre-existing temporary file.
+    probe = fopen(temp_path, "rb");
+    if (probe != NULL)
+    {
+        fclose(probe);
+        probe = NULL;
+        fprintf(stderr,
+                "Error: Temporary file already exists (%s). Remove or rename it first.\n",
+                temp_path);
+        goto cleanup;
+    }
+
+    // Step 4: Generate the subkeys once for the whole file.
+    generate_subkeys(key, subkeys);
+
+    // Step 5: Write only to the temporary file until processing succeeds.
+    output = fopen(temp_path, "wb");
+    if (output == NULL)
+    {
+        fprintf(stderr, "Error: Cannot create temporary output file.\n");
+        goto cleanup;
+    }
+    temp_created = 1;
+
+    // Step 6: Stream through the input in fixed-size chunks.
+    while (1)
+    {
+        size_t bytes_read = fread(buffer, 1, sizeof(buffer), input);
+
+        if (ferror(input))
+        {
+            fprintf(stderr, "Error: Failed to read input file.\n");
+            goto cleanup;
+        }
+
+        // Detect a file that grew beyond the size measured during validation.
+        if (total_processed > file_size ||
+            (unsigned long long)bytes_read > file_size - total_processed)
+        {
+            fprintf(stderr, "Error: Input file grew during processing.\n");
+            goto cleanup;
+        }
+
+        if (bytes_read == 0)
+            break;
+
+        if ((bytes_read % 8) != 0)
+        {
+            fprintf(stderr, "Error: Incomplete DES block encountered.\n");
+            goto cleanup;
+        }
+
+        for (size_t offset = 0; offset < bytes_read; offset += 8)
+        {
+            uint64_t block = load_block(buffer + offset);
+            block = des_process_block(block, subkeys, decrypt);
+            store_block(block, buffer + offset);
+        }
+
+        size_t bytes_written = fwrite(buffer, 1, bytes_read, output);
+        if (bytes_written != bytes_read)
+        {
+            fprintf(stderr, "Error: Failed to write temporary output file.\n");
+            goto cleanup;
+        }
+
+        total_processed += (unsigned long long)bytes_written;
+    }
+
+    // Confirm that the full validated file was processed.
+    if (total_processed != file_size)
+    {
+        fprintf(stderr, "Error: Input file size changed during processing.\n");
+        goto cleanup;
+    }
+
+    success = 1;
+
+cleanup:
+    if (probe != NULL)
+        fclose(probe);
+
+    if (input != NULL)
+    {
+        if (fclose(input) != 0)
+        {
+            fprintf(stderr, "Error: Failed to close input file.\n");
+            success = 0;
+        }
+    }
+
+    if (output != NULL)
+    {
+        if (fclose(output) != 0)
+        {
+            fprintf(stderr, "Error: Failed to close temporary output file.\n");
+            success = 0;
+        }
+    }
+
+    // Publish only after all processing and close operations succeeded.
+    if (success)
+    {
+        if (rename(temp_path, output_path) != 0)
+        {
+            fprintf(stderr,
+                    "Error: Could not publish temporary output as the final output.\n"
+                    "The destination may already exist or be inaccessible.\n");
+            success = 0;
+        }
+        else
+        {
+            temp_created = 0;
+        }
+    }
+
+    // Remove incomplete temporary output after any failure.
+    if (temp_created)
+    {
+        if (remove(temp_path) != 0)
+            fprintf(stderr, "Warning: Could not remove temporary file: %s\n", temp_path);
+    }
+
+    if (success)
+    {
+        printf("%s successful. Processed %llu bytes.\n",
+               decrypt ? "Decryption" : "Encryption",
+               file_size);
+    }
+
+    return success;
+}
+
+// 7. Parse exactly 16 hexadecimal characters into a 64-bit DES key.
+// Accepts both uppercase and lowercase hexadecimal digits.
+static int parse_hex_key(const char *text, uint64_t *key)
+{
+    uint64_t value = 0;
+
+    if (text == NULL || key == NULL)
+        return 0;
+
+    // A DES key is represented here by exactly 16 hexadecimal digits.
+    for (int i = 0; i < 16; ++i)
+    {
+        unsigned char c = (unsigned char)text[i];
+        unsigned int nibble;
+
+        if (c >= '0' && c <= '9')
+            nibble = (unsigned int)(c - '0');
+        else if (c >= 'A' && c <= 'F')
+            nibble = (unsigned int)(c - 'A' + 10);
+        else if (c >= 'a' && c <= 'f')
+            nibble = (unsigned int)(c - 'a' + 10);
+        else
+            return 0;
+
+        value = (value << 4) | (uint64_t)nibble;
+    }
+
+    // Reject strings longer than 16 characters.
+    if (text[16] != '\0')
+        return 0;
+
+    *key = value;
+    return 1;
+}
+
+// 8. Run the built-in DES encryption/decryption test vectors.
+static int run_tests(void)
 {
     static const struct {
         uint64_t key;
@@ -390,19 +689,14 @@ int main(void)
 
         printf("Test %u: %s\n", i + 1,
                encryption_ok && decryption_ok ? "PASS" : "FAIL");
-
         printf("  Key:        %016llX\n",
                (unsigned long long)tests[i].key);
-
         printf("  Plaintext:  %016llX\n",
                (unsigned long long)tests[i].plaintext);
-
         printf("  Expected:   %016llX\n",
                (unsigned long long)tests[i].expected);
-
         printf("  Actual:     %016llX\n",
                (unsigned long long)ciphertext);
-
         printf("  Recovered:  %016llX\n\n",
                (unsigned long long)recovered);
 
@@ -411,7 +705,46 @@ int main(void)
     }
 
     printf("Results: %u/%u tests passed.\n", passed, count);
-
     return passed == count ? 0 : 1;
 }
 
+// 9. Command-line interface
+// Usage: program e|d 16_HEX_DIGIT_KEY input_file output_file
+// Running with no arguments executes the built-in test vectors.
+int main(int argc, char *argv[])
+{
+    uint64_t key;
+    int decrypt;
+
+    if (argc == 1)
+        return run_tests();
+
+    if (argc != 5)
+    {
+        fprintf(stderr,
+                "Usage:\n"
+                "  %s e|d <16-hex-digit-key> <input-file> <output-file>\n"
+                "  %s                 (run built-in tests)\n",
+                argv[0], argv[0]);
+        return 1;
+    }
+
+    if (argv[1][0] == 'e' && argv[1][1] == '\0')
+        decrypt = 0;
+    else if (argv[1][0] == 'd' && argv[1][1] == '\0')
+        decrypt = 1;
+    else
+    {
+        fprintf(stderr, "Error: Mode must be 'e' (encrypt) or 'd' (decrypt).\n");
+        return 1;
+    }
+
+    if (!parse_hex_key(argv[2], &key))
+    {
+        fprintf(stderr,
+                "Error: The DES key must contain exactly 16 hexadecimal digits.\n");
+        return 1;
+    }
+
+    return process_file(argv[3], argv[4], key, decrypt) ? 0 : 1;
+}
