@@ -103,6 +103,10 @@ flowchart TD
     style G fill:#ddd6fe,stroke:#7c3aed,color:#111827
 ```
 
+### DES Architecture Diagram
+
+![DES Overall Architecture](docs/images/des-overall-architecture.png)
+
 ### Key Schedule
 
 The DES key schedule generates 16 round keys, each 48 bits wide.
@@ -210,6 +214,10 @@ flowchart TD
     style K fill:#ddd6fe,stroke:#7c3aed,color:#111827
 ```
 
+### File Processing Diagram
+
+![File Encryption and Decryption Workflow](docs/images/file-encryption-decryption-workflow.png)
+
 ### File Processing Characteristics
 
 * Input and output files are handled as binary data.
@@ -230,7 +238,11 @@ CipherForge/
 ├── 2200284.c    # DES implementation, file processing, and test harness
 ├── README.md    # Project documentation
 ├── LICENSE      # MIT License
-└── .gitignore   # Git ignore rules
+├── .gitignore   # Git ignore rules
+└── docs/
+    └── images/
+        ├── des-overall-architecture.png
+        └── file-encryption-decryption-workflow.png
 ```
 
 The implementation and built-in test harness are contained in a single C source file.
