@@ -4,7 +4,7 @@
 
 CipherForge is an educational cryptography project that implements DES at the bit level without relying on external cryptographic libraries. It demonstrates the internal workings of a symmetric block cipher, including key scheduling, permutations, S-box substitution, Feistel rounds, block encryption/decryption, and binary file processing.
 
-The project includes a command-line interface for encrypting and decrypting files, built-in DES known-answer tests, and support for processing large files in chunks.
+The project includes a command-line interface for encrypting and decrypting files, built-in DES known-answer tests, and support for processing large files in chunks. It also includes an automated Python verification suite for testing functional correctness and error handling.
 
 > **Security warning:** DES is cryptographically obsolete and must not be used to protect sensitive data. CipherForge is intended for educational purposes and algorithm experimentation.
 
@@ -22,6 +22,7 @@ The project includes a command-line interface for encrypting and decrypting file
 * [Build and Run](#build-and-run)
 * [Command-Line Usage](#command-line-usage)
 * [Verification and Test Results](#verification-and-test-results)
+* [Automated Verification Suite](#automated-verification-suite)
 * [Performance Benchmark](#performance-benchmark)
 * [Current Progress](#current-progress)
 * [Limitations](#limitations)
@@ -53,7 +54,8 @@ CipherForge implements these operations from scratch in C and extends the block 
 | File mode               | Electronic Codebook (ECB)           |
 | Padding                 | None                                |
 | Implementation language | C                                   |
-| Verification            | Five known-answer test vectors      |
+| Built-in verification   | Five known-answer test vectors      |
+| Automated verification  | 11 Python-based tests               |
 
 ---
 
@@ -69,13 +71,15 @@ CipherForge implements these operations from scratch in C and extends the block 
 * **P permutation:** Rearranges the S-box output bits.
 * **Feistel network:** Executes the 16 DES rounds.
 * **Block encryption and decryption:** Processes individual 64-bit blocks in both directions.
-* **File encryption and decryption:** Reads a binary input file and writes the transformed data to an output file.
+* **File encryption and decryption:** Reads binary input files and writes the transformed data to output files.
 * **Chunked file processing:** Processes large files without loading the entire file into memory.
 * **Input-size validation:** Rejects files whose sizes are not multiples of 8 bytes.
 * **No padding:** Processes complete DES blocks without adding padding.
 * **Command-line interface:** Selects encryption or decryption and specifies the key and file paths.
 * **Built-in verification:** Includes five DES known-answer tests.
-* **Round-trip verification:** Supports checking that decryption recovers the original file.
+* **Automated verification:** Includes a Python test suite for functional behavior, input validation, and error handling.
+* **Round-trip verification:** Checks whether decryption recovers the original file.
+* **Repeatability testing:** Checks whether identical inputs and keys produce identical ciphertext under the tested operation.
 
 ---
 
@@ -235,30 +239,48 @@ flowchart TD
 
 ```text
 CipherForge/
-├── 2200284.c    # DES implementation, file processing, and test harness
-├── README.md    # Project documentation
-├── LICENSE      # MIT License
-├── .gitignore   # Git ignore rules
+├── 2200284.c
+├── README.md
+├── LICENSE
+├── .gitignore
+├── tests/
+│   ├── __init__.py
+│   ├── run_tests.py
+│   └── test_des.py
 └── docs/
     └── images/
         ├── des-overall-architecture.png
         └── file-encryption-decryption-workflow.png
 ```
 
-The implementation and built-in test harness are contained in a single C source file.
+The DES implementation and built-in test harness are contained in a single C source file. The `tests/` directory contains the separate Python-based automated verification suite.
 
 ---
 
 ## Requirements
 
-* GCC or MinGW-w64
-* Windows PowerShell for the commands shown below
-* Standard C library functionality
-* Input files whose sizes are multiples of 8 bytes
+* GCC or MinGW-w64 with C11 support.
+* Python 3 for the automated verification suite.
+* Windows PowerShell for the commands shown below.
+* Standard C library functionality.
+* Input files whose sizes are multiples of 8 bytes.
 
 No external cryptographic libraries are required.
 
 The current file-processing implementation uses `_fseeki64()` and `_ftelli64()` for file-size validation. These are Microsoft-specific functions, so the current implementation should not be assumed to compile unchanged on every operating system or C library.
+
+### Requirements for the Automated Test Suite
+
+The automated suite uses Python's standard `unittest` framework and invokes the compiled C executable.
+
+Make sure:
+
+1. Python 3 is installed and accessible through the `python` command.
+2. GCC is installed and accessible to the test runner.
+3. The compiler configuration in `tests/run_tests.py` matches your environment.
+4. You run the test command from the project root so the expected files and paths can be found.
+
+The current Windows environment uses a configured GCC tool path because of an assembler compatibility issue. Other installations may not require this configuration.
 
 ---
 
@@ -291,6 +313,16 @@ On Windows PowerShell:
 ```
 
 The program runs the built-in DES verification tests and reports whether each known-answer test passes.
+
+### Run the Automated Verification Suite
+
+To compile the program and run all Python-based verification tests, execute:
+
+```powershell
+python .\tests\run_tests.py
+```
+
+This command performs both compilation and automated testing. See [Automated Verification Suite](#automated-verification-suite) for the test coverage and latest recorded results.
 
 ---
 
@@ -364,7 +396,7 @@ CipherForge does not add padding to incomplete blocks.
 
 ## Verification and Test Results
 
-CipherForge includes five known-answer tests that compare the computed ciphertext against expected DES results.
+CipherForge includes five built-in known-answer tests that compare the computed ciphertext against expected DES results.
 
 | Test | Key                | Plaintext          | Expected Ciphertext |
 | ---- | ------------------ | ------------------ | ------------------- |
@@ -374,7 +406,7 @@ CipherForge includes five known-answer tests that compare the computed ciphertex
 | 4    | `133457799BBCDFF1` | `0000000000000000` | `948A43F98A834F7E`  |
 | 5    | `133457799BBCDFF1` | `FFFFFFFFFFFFFFFF` | `5A3DB304D64924FD`  |
 
-### Known-Answer Test Result
+### Built-In Known-Answer Test Result
 
 **Latest recorded result: 5/5 test vectors passed.**
 
@@ -400,6 +432,179 @@ FC: no differences encountered
 ```
 
 These results establish successful round-trip processing for the tested file and key. They do not replace broader testing of malformed inputs, file errors, or other operating systems.
+
+For the separate Python-based verification suite, see [Automated Verification Suite](#automated-verification-suite).
+
+---
+
+## Automated Verification Suite
+
+CipherForge includes a Python-based automated verification suite in addition to the built-in DES known-answer tests. It checks functional correctness, encryption and decryption behavior, file handling, input validation, and selected error-handling scenarios.
+
+### Test Suite Structure
+
+```text
+tests/
+├── __init__.py
+├── run_tests.py
+└── test_des.py
+```
+
+* **`tests/run_tests.py`:** Compiles the C implementation and launches the Python test suite.
+* **`tests/test_des.py`:** Contains the 11 automated test cases.
+* **`tests/__init__.py`:** Enables Python package discovery for the test suite.
+
+### How to Run the Tests
+
+Open PowerShell in the project root directory and run:
+
+```powershell
+python .\tests\run_tests.py
+```
+
+The test runner performs the following operations:
+
+1. Invokes the configured GCC compiler.
+2. Compiles `2200284.c` into `2200284.exe`.
+3. Stops and reports an error if compilation fails.
+4. Runs the Python unittest suite.
+5. Displays each test result and a final summary.
+
+The test runner uses the compiler configuration in `tests/run_tests.py`. If the compiler or assembler is installed in a different location, the configuration may need to be adjusted.
+
+### Verification Flow
+
+```mermaid
+flowchart TD
+    A(["Start"]) --> B["Compile 2200284.c with GCC"]
+    B --> C{"Compilation Successful?"}
+    C -- No --> D["Report Compilation Error"]
+    C -- Yes --> E["Run Built-In DES Tests"]
+    E --> F["Run Python Verification Suite"]
+    F --> G["Check Encryption and Decryption"]
+    G --> H["Check Round-Trip File Processing"]
+    H --> I["Check Invalid Inputs and Error Handling"]
+    I --> J["Generate Test Summary"]
+    D --> K(["End"])
+    J --> K
+
+    style A fill:#dbeafe,stroke:#2563eb,color:#111827
+    style B fill:#e0f2fe,stroke:#0284c7,color:#111827
+    style F fill:#fef3c7,stroke:#d97706,color:#111827
+    style I fill:#dcfce7,stroke:#16a34a,color:#111827
+    style K fill:#ddd6fe,stroke:#7c3aed,color:#111827
+```
+
+### Automated Test Coverage
+
+The suite contains 11 tests.
+
+| #  | Test                              | What It Verifies                                                                            |
+| -- | --------------------------------- | ------------------------------------------------------------------------------------------- |
+| 1  | Built-in known-answer tests       | The known-answer tests embedded in the C program pass.                                      |
+| 2  | Encryption test vectors           | Encryption results match predefined expected ciphertexts.                                   |
+| 3  | Decryption test vectors           | Decryption recovers the expected plaintext for predefined vectors.                          |
+| 4  | Round-trip testing                | Encrypting and decrypting files of supported sizes recovers the original contents.          |
+| 5  | Invalid file sizes                | Files whose sizes are not multiples of 8 bytes are rejected.                                |
+| 6  | Malformed keys                    | Incorrectly formatted keys are rejected.                                                    |
+| 7  | Missing input file                | Attempts to process nonexistent input files fail appropriately.                             |
+| 8  | Output handling for missing input | A missing input file does not cause a new output file to be created in the tested scenario. |
+| 9  | Invalid operation                 | Unsupported operation arguments are rejected.                                               |
+| 10 | Missing command-line arguments    | Invoking the program without required arguments is handled appropriately.                   |
+| 11 | Deterministic encryption          | The same input and key produce identical ciphertext under the tested operation.             |
+
+### Latest Automated Test Results
+
+The latest recorded automated run completed successfully on the `main` branch.
+
+```text
+Ran 11 tests in 52.613s
+
+OK
+
+SUMMARY: 11 tests; 0 failures; 0 errors; 0 skipped.
+FINAL RESULT: ALL TESTS PASSED
+```
+
+| Metric         |         Result |
+| -------------- | -------------: |
+| Total tests    |             11 |
+| Passed         |             11 |
+| Failed         |              0 |
+| Errors         |              0 |
+| Skipped        |              0 |
+| Execution time | 52.613 seconds |
+
+**Final result: ALL TESTS PASSED.**
+
+These results confirm that the program compiled successfully and passed all 11 tests in the tested environment.
+
+### Testing Objectives
+
+#### 1. DES Functional Correctness
+
+Known-answer tests compare the implementation's output against predefined expected results. These tests help detect errors in encryption and decryption behavior.
+
+#### 2. Round-Trip Verification
+
+Round-trip tests encrypt and then decrypt files of supported sizes. The recovered file is compared against the original input.
+
+```text
+Original File
+     |
+     v
+DES Encryption
+     |
+     v
+Encrypted File
+     |
+     v
+DES Decryption
+     |
+     v
+Recovered File
+     |
+     v
+Compare with Original
+```
+
+The objective is to verify that the recovered file matches the original bytes.
+
+#### 3. Input Validation
+
+The suite checks how the program responds to invalid conditions, including:
+
+* File sizes that are not multiples of 8 bytes.
+* Malformed keys.
+* Missing input files.
+* Unsupported operation arguments.
+* Missing required command-line arguments.
+
+These tests verify selected rejection and error-handling behaviors.
+
+#### 4. File Handling
+
+The suite checks the handling of a missing input file and verifies that the tested failure scenario does not create a new output file.
+
+#### 5. Deterministic Behavior
+
+The suite verifies that the same plaintext and key produce the same ciphertext when the same DES operation is performed under the tested conditions.
+
+This checks repeatability; it is not a security guarantee.
+
+### Scope and Limitations
+
+The automated verification suite checks functional behavior and selected error-handling cases. Passing these tests does not prove that the implementation is free of every defect.
+
+The current suite does not establish:
+
+* Resistance to cryptanalysis or brute-force attacks.
+* Memory safety for every possible input.
+* Correct behavior on every operating system or compiler.
+* Compliance with every possible DES test vector.
+* Security of the surrounding application or file-handling environment.
+
+DES has an effective key length of only 56 bits and is unsuitable for modern security applications. CipherForge is an educational project for studying DES and its implementation.
 
 ---
 
@@ -445,6 +650,8 @@ Encryption and decryption have the same number of DES rounds, so the observed pe
 * [x] Input file size validation
 * [x] Chunked binary file processing
 * [x] Large-file round-trip verification
+* [x] Python-based automated verification suite
+* [x] Automated tests for invalid inputs and selected error-handling scenarios
 
 ---
 
@@ -464,14 +671,14 @@ Encryption and decryption have the same number of DES rounds, so the observed pe
 
 Potential future improvements include:
 
-* [ ] Add automated tests for invalid command-line arguments.
-* [ ] Test empty files and input files with invalid sizes.
+* [ ] Add more published DES known-answer test vectors.
+* [ ] Expand tests for empty files and additional file-size boundaries.
 * [ ] Expand file I/O error-handling tests.
 * [ ] Investigate the observed encryption/decryption performance difference.
 * [ ] Improve portability across operating systems and C libraries.
 * [ ] Add reproducible benchmarking instructions.
 * [ ] Add a modern authenticated encryption implementation, such as AES-GCM, as a separate feature.
-* [ ] Add automated regression testing to the development workflow.
+* [ ] Integrate automated regression testing into the development workflow.
 
 ---
 
@@ -481,7 +688,7 @@ Potential future improvements include:
 
 DES is considered insecure because its effective key length is only 56 bits. Additionally, ECB mode reveals patterns when plaintext contains repeated blocks.
 
-For real applications, use a modern, authenticated encryption scheme such as AES-GCM through a well-maintained cryptographic library. Do not use this DES implementation to protect passwords, personal information, financial data, or confidential files.
+For real applications, use a modern authenticated encryption scheme such as AES-GCM through a well-maintained cryptographic library. Do not use this DES implementation to protect passwords, personal information, financial data, or confidential files.
 
 ---
 
