@@ -1,16 +1,35 @@
-# Compiled binaries and intermediate files
+# Compiled executables and object files
+
 *.exe
 *.o
 *.obj
-*.i
-*.s
 
-# Generated DES test data
-plaintext.bin
-encrypted.bin
-decrypted.bin
-manual_test.o
+# Generated DES test files
+
+decrypted*.bin
+encrypted*.bin
+plaintext*.bin
+invalid*.bin
+
+# Temporary compiler outputs and diagnostics
+
+gcc_verbose.log
+cipher_test.i
+cipher_test.s
 
 # Python cache
+
 __pycache__/
 *.py[cod]
+
+# Local compiler test
+
+gcc_test.c
+
+# Local test key file
+
+key.txt
+
+# Local command-line tool artifacts
+
+system-commandline-sentinel-files/
