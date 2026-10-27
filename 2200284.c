@@ -1,3 +1,11 @@
+/*
+ * CSE451 - Project 1: DES
+ * Team members:
+ * 1. Omar Mohamed Eid - 2200284
+ * 2. Youssef Yacoub Radi - 2200649
+ * 3. Ahmed Naggar Hassan - 2200306
+ */
+
 // 1. Standard C headers and constants
 #include <stdint.h>
 #include <stdio.h>
@@ -633,6 +641,66 @@ static int parse_hex_key(const char *text, uint64_t *key)
     return 1;
 }
 
+// Read the key from a filename as required by the assignment.
+// Accepted formats: exactly 8 raw bytes, or 16 hexadecimal ASCII digits
+// optionally followed by CR/LF. The assignment specifies a key filename but
+// does not specify the file's internal encoding, so both common formats work.
+static int read_key_file(const char *path, uint64_t *key)
+{
+    FILE *file = fopen(path, "rb");
+    unsigned char bytes[32];
+    size_t n;
+    int extra;
+
+    if (file == NULL)
+    {
+        fprintf(stderr, "Error: Cannot open key file: %s\n", path);
+        return 0;
+    }
+
+    n = fread(bytes, 1, sizeof(bytes), file);
+    if (ferror(file))
+    {
+        fprintf(stderr, "Error: Failed to read key file: %s\n", path);
+        fclose(file);
+        return 0;
+    }
+
+    extra = fgetc(file);
+    if (fclose(file) != 0)
+    {
+        fprintf(stderr, "Error: Failed to close key file: %s\n", path);
+        return 0;
+    }
+
+    // Exactly 8 bytes means a raw binary DES key.
+    if (n == 8 && extra == EOF)
+    {
+        *key = load_block(bytes);
+        return 1;
+    }
+
+    // Otherwise accept 16 hex digits, with an optional newline at EOF.
+    if (extra == EOF && (n == 16 || n == 17 || n == 18))
+    {
+        size_t hex_len = 16;
+        if (n >= 17 && bytes[16] != '\n' && bytes[16] != '\r')
+            goto invalid_key;
+        if (n == 18 && !(bytes[16] == '\r' && bytes[17] == '\n'))
+            goto invalid_key;
+        if (n == 17 && bytes[16] == '\r')
+            goto invalid_key;
+        bytes[hex_len] = '\0';
+        if (parse_hex_key((const char *)bytes, key))
+            return 1;
+    }
+
+invalid_key:
+    fprintf(stderr,
+            "Error: Key file must contain 8 raw bytes or 16 hexadecimal digits (optionally followed by a newline).\n");
+    return 0;
+}
+
 // 8. Run the built-in DES encryption/decryption test vectors.
 static int run_tests(void)
 {
@@ -709,9 +777,9 @@ static int run_tests(void)
 }
 
 // 9. Command-line interface
-// Usage: program e|d 16_HEX_DIGIT_KEY input_file output_file
+// Required usage: program e|d key_file input_file output_file
 // Running with no arguments executes the built-in test vectors.
-int main(int argc, char *argv[])
+int main(int argc, char **argv)
 {
     uint64_t key;
     int decrypt;
@@ -723,7 +791,7 @@ int main(int argc, char *argv[])
     {
         fprintf(stderr,
                 "Usage:\n"
-                "  %s e|d <16-hex-digit-key> <input-file> <output-file>\n"
+                "  %s e|d <key-file> <input-file> <output-file>\n"
                 "  %s                 (run built-in tests)\n",
                 argv[0], argv[0]);
         return 1;
@@ -739,12 +807,8 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    if (!parse_hex_key(argv[2], &key))
-    {
-        fprintf(stderr,
-                "Error: The DES key must contain exactly 16 hexadecimal digits.\n");
+    if (!read_key_file(argv[2], &key))
         return 1;
-    }
 
     return process_file(argv[3], argv[4], key, decrypt) ? 0 : 1;
 }
