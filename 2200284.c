@@ -1,3 +1,13 @@
+/*
+ * Project: DES Encryption and Decryption
+ *
+ * Team Members:
+ * 1. Omar Mohamed Eid    - ID: 2200284
+ * 2. Youssef Yacoub Radi - ID: 2200649
+ * 3. Ahmed Naggar Hassan - ID: 2200306
+ *
+ */
+
 // 1. Standard C headers and constants
 #include <stdint.h>
 #include <stdio.h>
