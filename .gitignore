@@ -1,8 +1,16 @@
+# Compiled binaries and intermediate files
 *.exe
+*.o
 *.obj
-*.ilk
-*.pdb
-*.out
-build/
-.vscode/
-.idea/
+*.i
+*.s
+
+# Generated DES test data
+plaintext.bin
+encrypted.bin
+decrypted.bin
+manual_test.o
+
+# Python cache
+__pycache__/
+*.py[cod]
