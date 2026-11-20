@@ -46,16 +46,16 @@ CipherForge implements these operations from scratch in C and extends the block 
 | ----------------------- | ----------------------------------- |
 | Algorithm               | Data Encryption Standard (DES)      |
 | Block size              | 64 bits (8 bytes)                   |
-| Key representation      | 64 bits (16 hexadecimal characters) |
+| Key representation      | 64-bit key file (16 hex chars or 8 raw bytes) |
 | Effective key length    | 56 bits                             |
 | Number of rounds        | 16                                  |
 | Round-key size          | 48 bits                             |
-| File processing         | Chunked binary I/O                  |
+| File processing         | Chunked binary I/O (1 MiB buffer)   |
 | File mode               | Electronic Codebook (ECB)           |
 | Padding                 | None                                |
-| Implementation language | C                                   |
+| Implementation language | C (C11 standard)                    |
 | Built-in verification   | Five known-answer test vectors      |
-| Automated verification  | 11 Python-based tests               |
+| Automated verification  | 39 Python-based tests               |
 
 ---
 
@@ -290,18 +290,16 @@ Open a terminal in the project directory.
 
 ### Compile
 
-The following command is the build command verified in the current Windows environment:
+As required by the assignment specification:
 
 ```powershell
-gcc -B"C:/msys64/ucrt64/bin/" -std=c11 -O2 -Wall -Wextra .\2200284.c -o .\2200284.exe
+gcc -O3 .\2200284.c -o .\2200284.exe
 ```
 
-The `-B` option selects the specified tool directory for GCC's subordinate tools in the current environment.
-
-If your GCC installation does not require this workaround, the following standard command may be sufficient:
+Or on Linux:
 
 ```bash
-gcc -std=c11 -O2 -Wall -Wextra 2200284.c -o 2200284
+gcc -O3 2200284.c -o 2200284
 ```
 
 ### Run the Built-In Tests
@@ -331,26 +329,26 @@ This command performs both compilation and automated testing. See [Automated Ver
 The file-processing interface accepts four arguments after the program name:
 
 ```text
-program e <key> <input_file> <output_file>
-program d <key> <input_file> <output_file>
+program "e" <key_file> <input_file> <output_file>
+program "d" <key_file> <input_file> <output_file>
 ```
 
 Where:
 
-| Argument        | Description                                      |
-| --------------- | ------------------------------------------------ |
-| `e`             | Encrypt the input file                           |
-| `d`             | Decrypt the input file                           |
-| `<key>`         | DES key represented by 16 hexadecimal characters |
-| `<input_file>`  | Path to the source file                          |
-| `<output_file>` | Path to the destination file                     |
+| Argument        | Description                                                          |
+| --------------- | -------------------------------------------------------------------- |
+| `"e"`           | Encrypt the input file (case-insensitive: `e`, `E`, `-e`, `encrypt`) |
+| `"d"`           | Decrypt the input file (case-insensitive: `d`, `D`, `-d`, `decrypt`) |
+| `<key_file>`    | Path to key file (16 hex chars, optional `0x`, or 8 raw bytes)       |
+| `<input_file>`  | Path to the source file                                              |
+| `<output_file>` | Path to the destination file                                         |
 
 ### Encrypt a File
 
-Example using the DES key `133457799BBCDFF1`:
+Example using a key file `key.txt` containing `133457799BBCDFF1`:
 
 ```powershell
-.\2200284.exe e 133457799BBCDFF1 plaintext.bin encrypted.bin
+.\2200284.exe "e" key.txt plaintext.bin encrypted.bin
 ```
 
 This reads `plaintext.bin` and writes the ciphertext to `encrypted.bin`.
@@ -358,7 +356,7 @@ This reads `plaintext.bin` and writes the ciphertext to `encrypted.bin`.
 ### Decrypt a File
 
 ```powershell
-.\2200284.exe d 133457799BBCDFF1 encrypted.bin decrypted.bin
+.\2200284.exe "d" key.txt encrypted.bin decrypted.bin
 ```
 
 This reads `encrypted.bin` and writes the recovered plaintext to `decrypted.bin`.
